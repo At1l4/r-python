@@ -25,7 +25,7 @@ pub enum Pattern {
     PString(String),                
     PList(Vec<Pattern>),            
     PTuple(Vec<Pattern>),           
-    Padt(Name, Vec<Pattern>) 
+    Padt(Name, Vec<Pattern>)       // ValueConstructor (ADT Instance)
 }
 
 #[derive(Debug, PartialEq, Clone)]

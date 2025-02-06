@@ -25,6 +25,7 @@ pub fn check(exp: Expression, env: &Environment,) -> Result<Type, ErrorMessage> 
         Expression::GTE(l, r) => check_bin_relational_expression(*l, *r, env),
         Expression::LTE(l, r) => check_bin_boolean_expression(*l, *r, env),
         Expression::ADTConstructor(name, exprs) => check_adt_constructor(name, exprs, env),
+        Expression::Match(value_expr, cases) => check_match(value_expr, cases, env),
         _ => Err(String::from("not implemented yet")),
     }
 }
@@ -45,6 +46,69 @@ fn check_adt_constructor(name: Name, exprs: Vec<Box<Expression>>, env: &Environm
         Err(format!("Invalid ADT constructor usage for {}", name))
     } else {
         Err(format!("Unknown ADT: {}", name))
+    }
+}
+
+/// Verifica a tipagem de uma expressão Match
+fn check_match(value_expr: Box<Expression>, cases: Vec<(Pattern, Box<Expression>)>, env: &Environment) -> Result<Type, ErrorMessage> {
+    let value_type = check(*value_expr, env)?; // Obtém o tipo da expressão testada
+
+    let mut result_type: Option<Type> = None;
+
+    for (pattern, result_expr) in cases {
+        let mut new_env = env.clone(); // Criamos um novo ambiente local
+
+        check_pattern(&pattern, &value_type, &mut new_env)?; // Verifica se o padrão é compatível
+
+        let case_type = check(*result_expr, &new_env)?; // Verifica o tipo da expressão associada
+
+        match &result_type {
+            Some(t) if *t != case_type => {
+                return Err(format!("All match arms must return the same type: expected {:?}, found {:?}", t, case_type));
+            }
+            None => result_type = Some(case_type),
+            _ => {}
+        }
+    }
+
+    result_type.ok_or_else(|| "Match expression must have at least one case".to_string())
+}
+
+/// Verifica se um padrão é válido para um determinado tipo e adiciona variáveis ao ambiente
+fn check_pattern(pattern: &Pattern, value_type: &Type, env: &mut Environment) -> Result<(), ErrorMessage> {
+    match (pattern, value_type) {
+        (Pattern::PVar(name), _) => {
+            env.insert(name.clone(), value_type.clone()); // Associa variável ao tipo detectado
+            Ok(())
+        }
+        (Pattern::PInt(_), Type::TInteger) => Ok(()),
+        (Pattern::PBool(_), Type::TBool) => Ok(()),
+        (Pattern::PString(_), Type::TString) => Ok(()),
+
+        (Pattern::PList(patterns), Type::TList(inner_type)) => {
+            for p in patterns {
+                check_pattern(p, inner_type, env)?;
+            }
+            Ok(())
+        }
+        (Pattern::PTuple(patterns), Type::TTuple(types)) if patterns.len() == types.len() => {
+            for (p, t) in patterns.iter().zip(types.iter()) {
+                check_pattern(p, t, env)?;
+            }
+            Ok(())
+        }
+        (Pattern::Padt(name1, patterns), Type::Tadt(name2, constructors)) if name1 == name2 => {
+            for constructor in constructors {
+                if constructor.name == *name1 && constructor.types.len() == patterns.len() {
+                    for (p, t) in patterns.iter().zip(constructor.types.iter()) {
+                        check_pattern(p, t, env)?;
+                    }
+                    return Ok(());
+                }
+            }
+            Err(format!("ADT pattern {} does not match its constructor", name1))
+        }
+        _ => Err(format!("Pattern {:?} does not match type {:?}", pattern, value_type)),
     }
 }
 
