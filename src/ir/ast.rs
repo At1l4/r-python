@@ -17,6 +17,16 @@ pub struct  ValueConstructor{
     pub types: Vec<Type> 
 }
 
+#[derive(Debug,PartialEq, Clone)]
+pub enum Pattern {
+    PVar(Name),                    // Standart variable
+    PInt(i32),                     
+    PBool(bool),                   
+    PString(String),                
+    PList(Vec<Pattern>),            
+    PTuple(Vec<Pattern>),           
+    Padt(Name, Vec<Pattern>) 
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
@@ -51,6 +61,9 @@ pub enum Expression {
 
     /* ADT Constructor */
     ADTConstructor(Name, Vec<Box<Expression>>),
+
+    /* Match Block */
+    Match(Box<Expression>,Vec<(Pattern,Box<Expression>)>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
