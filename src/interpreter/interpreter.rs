@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::{Expression, Name, Statement, ValueConstructor};
+use crate::ir::ast::{Expression, Name, Statement, Variant};
 
 type ErrorMessage = String;
 
 type Environment = HashMap<Name, Expression>;
-type TypeEnvironment = HashMap<Name, Vec<ValueConstructor>>; // Store ADT Definitions
+type TypeEnvironment = HashMap<Name, Vec<Variant>>; // Store ADT Definitions
 
 
 pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessage> {
@@ -24,20 +24,53 @@ pub fn eval(exp: Expression, env: &Environment) -> Result<Expression, ErrorMessa
         Expression::GTE(lhs, rhs) => gte(*lhs, *rhs, env),
         Expression::LTE(lhs, rhs) => lte(*lhs, *rhs, env),
         Expression::Var(name) => lookup(name, env),
-        Expression::Constructor(name, args) => constructor(name,args,env),
+        Expression::Constructor(name_adt,name_instance, args) => constructor(name_adt,name_instance, args,env),
         _ if is_constant(exp.clone()) => Ok(exp),
         _ => Err(String::from("Not implemented yet.")),
     }
 }
 
-fn constructor(name:Name,args:Vec<Box::Expression,env:&Environment)->Result<Expression,ErrorMessage> {
+fn constructor(name_adt:Name,name_instance:Name,args:Vec<Box::Expression,env:&Environment)->Result<Expression,ErrorMessage> {
     let evaluated_args: Result<Vec<Box<Expression>>, ErrorMessage> = 
         args.into_iter()
             .map(|arg| eval(*arg, env).map(Box::new))
             .collect();
     
-    evaluated_args.map(|evaluated| Expression::Constructor(name, evaluated))
+    evaluated_args.map(|evaluated| Expression::Constructor(name_adt,name_instance, evaluated))
 }
+fn match_pattern(
+    pattern: &Expression,
+    value: &Expression,
+    env: &Environment
+) -> Option<Environment> {
+    let mut new_env = env.clone();
+
+    match (pattern, value) {
+        // Casamento direto de construtores ADT
+        (
+            Expression::ADTConstructor(type1, variant1, args1),
+            Expression::ADTConstructor(type2, variant2, args2),
+        ) if type1 == type2 && variant1 == variant2 && args1.len() == args2.len() => {
+            for (p, v) in args1.iter().zip(args2.iter()) {
+                if let Some(updated_env) = match_pattern(p, v, &new_env) {
+                    new_env = updated_env;
+                } else {
+                    return None;
+                }
+            }
+            Some(new_env)
+        }
+
+        // Caso de variável no padrão
+        (Expression::Var(var_name), value) => {
+            new_env.insert(var_name.clone(), value.clone());
+            Some(new_env)
+        }
+
+        _ => None, // Se não casar, retorna None
+    }
+}
+
 
 fn is_constant(exp: Expression) -> bool {
     match exp {
@@ -295,14 +328,21 @@ fn lte(lhs: Expression, rhs: Expression, env: &Environment) -> Result<Expression
     )
 }
 
-pub fn execute(stmt: Statement, env: Environment, type_env: &mut TypeEnvironment) -> Result<Environment, ErrorMessage> {
+pub fn execute(
+    stmt: Statement,
+    env: Environment,
+    type_env: &mut TypeEnvironment
+) -> Result<Environment, ErrorMessage> {
     match stmt {
+        // Atribuição de variável
         Statement::Assignment(name, exp) => {
             let value = eval(*exp, &env)?;
             let mut new_env = env;
             new_env.insert(name.clone(), value);
-            Ok(new_env.clone())
+            Ok(new_env)
         }
+
+        // Estruturas condicionais
         Statement::IfThenElse(cond, stmt_then, stmt_else) => {
             let value = eval(*cond, &env)?;
             match value {
@@ -311,26 +351,51 @@ pub fn execute(stmt: Statement, env: Environment, type_env: &mut TypeEnvironment
                     Some(else_statement) => execute(*else_statement, env, type_env),
                     None => Ok(env),
                 },
-                _ => Err(String::from("expecting a boolean value.")),
+                _ => Err(String::from("Expecting a boolean value in if condition.")),
             }
         }
+
+        // Estruturas de repetição
         Statement::While(cond, stmt) => {
             let mut value = eval(*cond.clone(), &env)?;
             let mut new_env = env;
             while value == Expression::CTrue {
                 new_env = execute(*stmt.clone(), new_env.clone(), type_env)?;
-                value = eval(*cond.clone(), &new_env.clone())?;
+                value = eval(*cond.clone(), &new_env)?;
             }
             Ok(new_env)
         }
-        Statement::Sequence(s1, s2) => execute(*s1, env, type_env).and_then(|new_env| execute(*s2, new_env, type_env)),
+
+        // Sequência de statements
+        Statement::Sequence(s1, s2) => {
+            execute(*s1, env, type_env).and_then(|new_env| execute(*s2, new_env, type_env))
+        }
+
+        // Declaração de ADT
         Statement::ADTDeclaration(name, constructors) => {
-            type_env.insert(name, constructors);
+            let mut new_type_env = type_env.clone();
+            new_type_env.insert(name, constructors);
+            *type_env = new_type_env;
             Ok(env)
         }
-        _ => Err(String::from("not implemented yet")),
+
+        // Match statement
+        Statement::Match(expr, cases) => {
+            let value = eval(*expr, &env)?;
+
+            for (pattern, body) in cases {
+                if let Some(mut new_env) = match_pattern(&pattern, &value, &env) {
+                    return execute(*body, new_env, type_env);
+                }
+            }
+
+            Err(String::from("No match found for expression."))
+        }
+
+        _ => Err(String::from("Statement not implemented yet")),
     }
 }
+
 
 
 #[cfg(test)]
@@ -1102,8 +1167,8 @@ mod tests {
         let stmt = Statement::ADTDeclaration(
             "Perhaps".to_string(),
             vec![
-                ValueConstructor {name: "probablyYes".to_string(), types: vec![]},
-                ValueConstructor {name: "probablyNo".to_string(), types: vec![]},
+                Variant {name: "probablyYes".to_string(), types: vec![]},
+                Variant {name: "probablyNo".to_string(), types: vec![]},
             ],
         );
 
@@ -1147,10 +1212,10 @@ mod tests {
         let stmt = Statement::ADTDeclaration(
             "Shape".to_string(),
             vec![
-                ValueConstructor { name : "Circle".to_string(), types: vec![Type::TInteger]},
-                ValueConstructor { name : "Rectangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
-                ValueConstructor { name : "Triangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
-            
+                Variant { name : "Circle".to_string(), types: vec![Type::TInteger]},
+                Variant { name : "Rectangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
+                Variant { name : "Triangle".to_string(), types: vec![Type::TInteger, Type::TInteger]},
+                Expression::ADTConstructor(Name::"Circle",vec![Type::TInteger, Type::TInteger])
             ],
         );
         

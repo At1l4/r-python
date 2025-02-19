@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::ast::{Expression, Name, Type, ValueConstructor};
+use crate::ir::ast::{Expression, Name, Type, Variant};
 type ErrorMessage = String;
 
 type Environment = HashMap<Name, Type>;
@@ -313,14 +313,14 @@ mod tests {
     let mut env = Environment::new();
     
     // Define the ADT "Some" with a constructor that takes a single integer
-    let some_adt = vec![ValueConstructor {
+    let some_adt = vec![Variant {
         name: "Some".to_string(),
         types: vec![Type::TInteger], // Expected type for the constructor
     }];
     env.insert("Some".to_string(), Type::Tadt("Some".to_string(), some_adt));
 
     // Define the ADT "Maybe" with a constructor that takes a real number and a string
-    let maybe_adt = vec![ValueConstructor {
+    let maybe_adt = vec![Variant {
         name: "Maybe".to_string(),
         types: vec![Type::TReal, Type::TString], // Expected types for the constructor
     }];
@@ -338,7 +338,7 @@ mod tests {
         let result = check_adt_constructor(adt_name, exprs, &env);
         
         assert_eq!(result, Ok(Type::Tadt("Some".to_string(), vec![
-            ValueConstructor { name: "Some".to_string(), types: vec![Type::TInteger] }
+            Variant { name: "Some".to_string(), types: vec![Type::TInteger] }
         ])));
     }
     
@@ -376,7 +376,7 @@ mod tests {
         let result = check_adt_constructor(adt_name, exprs, &env);
 
         assert_eq!(result, Ok(Type::Tadt("Maybe".to_string(), vec![
-            ValueConstructor { name: "Maybe".to_string(), types: vec![Type::TReal, Type::TString] }
+            Variant { name: "Maybe".to_string(), types: vec![Type::TReal, Type::TString] }
         ])));
     }
 }

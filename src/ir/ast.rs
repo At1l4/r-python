@@ -8,25 +8,15 @@ pub enum Type {
     TString,
     TList(Box<Type>),
     TTuple(Vec<Type>),
-    Tadt(Name, Vec<ValueConstructor>),
+    Tadt(Name, Vec<Variant>),
 }
 
 #[derive(Debug,PartialEq, Clone)]
-pub struct  ValueConstructor{
+pub struct  Variant{
     pub name: Name,
     pub types: Vec<Type> 
 }
 
-#[derive(Debug,PartialEq, Clone)]
-pub enum Pattern {
-    PVar(Name),                    // Standart variable
-    PInt(i32),                     
-    PBool(bool),                   
-    PString(String),                
-    PList(Vec<Pattern>),            
-    PTuple(Vec<Pattern>),           
-    Padt(Name, Vec<Pattern>)       // ValueConstructor (ADT Instance)
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
@@ -60,10 +50,7 @@ pub enum Expression {
     LTE(Box<Expression>, Box<Expression>),
 
     /* ADT Constructor */
-    ADTConstructor(Name, Vec<Box<Expression>>),
-
-    /* Match Block */
-    Match(Box<Expression>,Vec<(Pattern,Box<Expression>)>)
+    ADTConstructor(Name, Name, Vec<Box<Expression>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -74,5 +61,6 @@ pub enum Statement {
     IfThenElse(Box<Expression>, Box<Statement>, Option<Box<Statement>>),
     While(Box<Expression>, Box<Statement>),
     Sequence(Box<Statement>, Box<Statement>), 
-    ADTDeclaration(Name, Vec<ValueConstructor>),
+    ADTDeclaration(Name, Vec<Variant>),
+    Match(Box<Expression>, Vec<(Expression, Box<Statement>)>)
 }
